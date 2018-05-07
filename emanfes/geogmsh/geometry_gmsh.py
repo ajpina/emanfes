@@ -18,35 +18,36 @@
 # ==========================================================================
 
 """
-    Creates Elmer solver.
+    Creates Gmsh Geometry.
 """
 
 # ==========================================================================
-# Program:   emanfes-solver.py
+# Program:   geometry_gmsh.py
 # Author:    ajpina
 # Date:      12/23/17
 # Version:   0.1.1
 #
 # Revision History:
 #      Date     Version  Author    Description
-#  - 12/23/17:  0.1.1              Call Elmer Solver
+#  - 12/23/17:  0.1.1              Uses Gmsh python API
 #
 # ==========================================================================
 
-from emanfes.geogmsh import GeometryGmsh
 
-class ElmerSolver:
+
+class GeometryGmsh:
+
     def __init__(self, analysis_settings, rotating_machine):
-        self.gmsh_model = GeometryGmsh(analysis_settings, rotating_machine)
+        from emanfes.geogmsh import GmshOuterStator
+        self.stator = GmshOuterStator(analysis_settings, rotating_machine)
+        from emanfes.geogmsh import GmshInnerRotor
+        self.rotor = GmshInnerRotor(analysis_settings, rotating_machine)
 
     def create(self):
-        self.gmsh_model.create()
+        self.stator.create()
+        self.rotor.create()
 
     def mesh(self):
         pass
 
-    def solve(self):
-        pass
 
-    def post_processing(self):
-        pass

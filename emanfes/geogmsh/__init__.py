@@ -17,36 +17,7 @@
 # limitations under the License.
 # ==========================================================================
 
-"""
-    Creates Elmer solver.
-"""
+from .geometry_gmsh import GeometryGmsh
 
-# ==========================================================================
-# Program:   emanfes-solver.py
-# Author:    ajpina
-# Date:      12/23/17
-# Version:   0.1.1
-#
-# Revision History:
-#      Date     Version  Author    Description
-#  - 12/23/17:  0.1.1              Call Elmer Solver
-#
-# ==========================================================================
-
-from emanfes.geogmsh import GeometryGmsh
-
-class ElmerSolver:
-    def __init__(self, analysis_settings, rotating_machine):
-        self.gmsh_model = GeometryGmsh(analysis_settings, rotating_machine)
-
-    def create(self):
-        self.gmsh_model.create()
-
-    def mesh(self):
-        pass
-
-    def solve(self):
-        pass
-
-    def post_processing(self):
-        pass
+from .gmsh_outer_stator import GmshOuterStator
+from .gmsh_inner_rotor import GmshInnerRotor

@@ -41,6 +41,7 @@ import logging
 
 from uffema.machines import RotatingMachine
 from emanfes.analysis import Analysis
+from emanfes.src.constants import *
 
 
 #from database import db_connector as db

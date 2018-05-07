@@ -17,3 +17,4 @@
 # limitations under the License.
 # ==========================================================================
 
+from .elmer_solver import ElmerSolver
