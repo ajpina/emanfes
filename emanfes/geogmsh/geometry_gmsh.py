@@ -35,6 +35,7 @@
 
 
 
+
 class GeometryGmsh:
 
     def __init__(self, analysis_settings, rotating_machine):
