@@ -34,42 +34,92 @@
 # ==========================================================================
 
 import gmsh
-import numpy as np
 
-from emanfes.src.constants import *
+from emanfes.misc.constants import *
 
 
 class GmshOuterStator:
 
-    def __init__(self, analysis_settings, rotating_machine):
+    def __init__(self, simulation, rotating_machine):
         self.Sir = rotating_machine.stator.inner_radius
         self.Sor = rotating_machine.stator.outer_radius
         self.Ror = rotating_machine.rotor.outer_radius + rotating_machine.rotor.magnets[0].length
         self.Ns = rotating_machine.stator.slots_number
 
         self.slot_opening_points, self.slot_opening_lines = rotating_machine.stator.get_slot_opening_geometry()
+        self.slot_opening_mesh_size = self._get_mesh_size( self.slot_opening_points, div=2.0)
+
         self.slot_wedge_points, self.slot_wedge_lines = rotating_machine.stator.get_slot_wedge_geometry()
+        self.slot_wedge_mesh_size = self._get_mesh_size(self.slot_wedge_points, div=2.0)
+        if self.slot_wedge_mesh_size == 0:
+            self.slot_wedge_mesh_size = self.slot_opening_mesh_size
+
         self.coil_area_points, self.coil_area_lines = rotating_machine.stator.get_coil_area_geometry()
+        self.coil_area_mesh_size = self._get_mesh_size(self.coil_area_points, div=5.0)
+        if self.coil_area_mesh_size == 0:
+            self.coil_area_mesh_size = self.slot_wedge_mesh_size
+
         self.backiron_points, self.backiron_lines = rotating_machine.stator.get_backiron_geometry()
+        self.backiron_mesh_size = self._get_mesh_size(self.backiron_points, div=5.0)
+        if self.backiron_mesh_size == 0:
+            self.backiron_mesh_size = self.coil_area_mesh_size
+
         self.tooth_points, self.tooth_lines = rotating_machine.stator.get_tooth_geometry()
+        self.tooth_mesh_size = self._get_mesh_size(self.tooth_points, div=5.0)
+        if self.tooth_mesh_size == 0:
+            self.tooth_mesh_size = self.backiron_mesh_size
+
         self.toothtip_points, self.toothtip_lines = rotating_machine.stator.get_toothtip_geometry()
+        self.toothtip_mesh_size = self._get_mesh_size(self.toothtip_points, div=5.0)
+        if self.toothtip_mesh_size == 0:
+            self.toothtip_mesh_size = self.tooth_mesh_size
+
         self.stator_airgap_points, self.stator_airgap_lines = rotating_machine.stator.get_stator_airgap_geometry( (self.Sir + self.Ror) / 2.0)
+        self.stator_airgap_mesh_size = self._get_mesh_size(self.stator_airgap_points, div=40.0)
+        if self.stator_airgap_mesh_size == 0:
+            self.stator_airgap_mesh_size = self.slot_opening_mesh_size / 2.0
+
         self.outer_stator_boundary = rotating_machine.stator.get_outer_stator_boundary()
         self.stator_master_boundary = rotating_machine.stator.get_master_boundary()
         self.stator_sliding_boundary = rotating_machine.stator.get_sliding_boundary()
 
+
         self.pp = rotating_machine.rotor.pp
         self.nCopies = int(self.Ns / GCD(self.Ns, 2 * self.pp))
 
+    def get_fractions_drawn(self):
+        return int(self.Ns / self.nCopies)
 
+    def _get_mesh_size(self, points, div=1.0):
+        x_max = -1e20
+        x_min = 1e20
+        y_max = -1e20
+        y_min = 1e20
+        for p in points:
+            x = points[p][0]
+            y = points[p][1]
+            if x > x_max:
+                x_max = x
+            if x < x_min:
+                x_min = x
+            if y > y_max:
+                y_max = y
+            if y < y_min:
+                y_min = y
+        mesh_size_x = (x_max - x_min) / div
+        mesh_size_y = (y_max - y_min) / div
+        if mesh_size_x > mesh_size_y:
+            return mesh_size_x
+        else:
+            return mesh_size_y
 
-    def _get_surface(self, points, lines, dx, dy, dz, model):
+    def _get_surface(self, points, lines, dx, dy, dz, model, mesh_size=1):
         for point in points:
             p = int(point)
             x = points[point][0] + dx
             y = points[point][1] + dy
             z = points[point][2] + dz
-            model.geo.addPoint(x, y, z, 1e-4, p)
+            model.geo.addPoint(x, y, z, meshSize=mesh_size, tag=p)
 
         wire = []
         for line in lines:
@@ -150,29 +200,29 @@ class GmshOuterStator:
 
 
     def create(self):
-        gmsh.initialize()
+        gmsh.initialize('', False)
         gmsh.option.setNumber("General.Terminal", 1)
         gmsh.option.setNumber("Geometry.AutoCoherence", 0)
-        gmsh.option.setNumber("Mesh.CharacteristicLengthMax", 1e-3)
+        gmsh.option.setNumber("Mesh.Algorithm", 5)
         model = gmsh.model
         factory = model.geo
         model.add("stator")
-        factory.addPoint(0, 0, 0, 1e-4, 1)
+        factory.addPoint(0, 0, 0, 1e-1, 1)
 
         slot_opening_surface = self._get_surface( self.slot_opening_points, self.slot_opening_lines,
-                                                 self.Sir, 0, 0, model)
+                                                 self.Sir, 0, 0, model, self.slot_opening_mesh_size)
         slot_wedge_surface = self._get_surface( self.slot_wedge_points, self.slot_wedge_lines,
-                                               self.Sir, 0, 0, model)
+                                               self.Sir, 0, 0, model, self.slot_wedge_mesh_size)
         coil_area_surface = self._get_surface(self.coil_area_points, self.coil_area_lines,
-                                              self.Sir, 0, 0, model)
+                                              self.Sir, 0, 0, model, self.coil_area_mesh_size)
         backiron_surface = self._get_surface(self.backiron_points, self.backiron_lines,
-                                             0, 0, 0, model)
+                                             0, 0, 0, model, self.backiron_mesh_size)
         tooth_surface = self._get_surface(self.tooth_points, self.tooth_lines,
-                                            0, 0, 0, model)
+                                            0, 0, 0, model, self.tooth_mesh_size)
         toothtip_surface = self._get_surface(self.toothtip_points, self.toothtip_lines,
-                                            0, 0, 0, model)
+                                            0, 0, 0, model, self.toothtip_mesh_size)
         stator_airgap_surface = self._get_surface(self.stator_airgap_points, self.stator_airgap_lines,
-                                             0, 0, 0, model)
+                                             0, 0, 0, model, self.stator_airgap_mesh_size)
 
         slot_opening_surface_mirror = self._get_surface_mirror(slot_opening_surface[-1], model)
         slot_wedge_surface_mirror = self._get_surface_mirror( slot_wedge_surface[-1], model )

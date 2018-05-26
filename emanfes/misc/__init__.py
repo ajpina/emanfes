@@ -17,4 +17,4 @@
 # limitations under the License.
 # ==========================================================================
 
-from .results import Result
+from .constants import *

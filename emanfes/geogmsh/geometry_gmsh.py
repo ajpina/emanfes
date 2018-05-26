@@ -38,15 +38,24 @@
 
 class GeometryGmsh:
 
-    def __init__(self, analysis_settings, rotating_machine):
+    def __init__(self, simulation, rotating_machine):
         from emanfes.geogmsh import GmshOuterStator
-        self.stator = GmshOuterStator(analysis_settings, rotating_machine)
+        self.stator = GmshOuterStator(simulation, rotating_machine)
         from emanfes.geogmsh import GmshInnerRotor
-        self.rotor = GmshInnerRotor(analysis_settings, rotating_machine)
+        self.rotor = GmshInnerRotor(simulation, rotating_machine)
 
     def create(self):
         self.stator.create()
         self.rotor.create()
+
+    def get_fractions_drawn(self):
+        sf = self.stator.get_fractions_drawn()
+        rf = self.rotor.get_fractions_drawn()
+        if sf == rf:
+            return sf
+        else:
+            return 1.0
+
 
     def mesh(self):
         pass

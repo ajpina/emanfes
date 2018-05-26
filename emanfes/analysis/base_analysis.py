@@ -18,20 +18,20 @@
 # ==========================================================================
 
 
-
 class Analysis:
 
     def __init__(self, analysis_settings, rotating_machine):
-        self.solver_str = analysis_settings['solver']
-        if self.solver_str == 'elmer':
+        from emanfes.analysis import Simulation
+        sim = Simulation( analysis_settings )
+        if sim.solver == 'elmer':
             from emanfes.elmer import ElmerSolver
-            self.solver_instance = ElmerSolver(analysis_settings, rotating_machine)
-        elif self.solver_str == 'getdp':
+            self.solver_instance = ElmerSolver(sim, rotating_machine)
+        elif sim.solver == 'getdp':
             from emanfes.getdp import GetDPSolver
-            self.solver_instance = GetDPSolver(analysis_settings, rotating_machine)
+            self.solver_instance = GetDPSolver(sim, rotating_machine)
         else:
             from emanfes.elmer import ElmerSolver
-            self.solver_instance = ElmerSolver(analysis_settings, rotating_machine)
+            self.solver_instance = ElmerSolver(sim, rotating_machine)
 
 
     def create_model(self):

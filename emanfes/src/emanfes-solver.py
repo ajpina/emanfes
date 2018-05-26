@@ -35,13 +35,13 @@
 
 import getopt
 import json
+import logging
 import sys
 import time
-import logging
 
-from uffema.machines import RotatingMachine
 from emanfes.analysis import Analysis
-from emanfes.src.constants import *
+from emanfes.misc.constants import *
+from uffema.machines import RotatingMachine
 
 
 #from database import db_connector as db
@@ -57,13 +57,13 @@ def main(argv=None):
         argv = sys.argv
     try:
         try:
-            opts, args = getopt.getopt(argv[1:], "hd:m:a:l:o:ps:", ["help","dir","machine","analysis","log","ouput","plot","save"])
+            opts, args = getopt.getopt(argv[1:], "hd:m:a:l:o:ps:e:", ["help","dir","machine","analysis","log","ouput","plot","save","execute"])
         except getopt.GetoptError as msg:
              raise Usage(msg)
         loglevel = LOG_ALL
         for opt, arg in opts:
             if opt in ("-h", "--help"):
-                print ('emanfes.py -d [dir_name] -m [machine_file] -a [analysis_file] -l [level] -o [output_file] -p -s [database_file]')
+                print ('emanfes.py -d [dir_name] -m [machine_file] -a [analysis_file] -l [level] -o [output_file] -p -s [database_file] -e [execute]')
                 sys.exit()
             elif opt in ("-d", "--dir"):
                 dir = arg
@@ -79,6 +79,18 @@ def main(argv=None):
                 plot = True
             elif opt in ("-s", "--save"):
                 db_file = arg
+            elif opt in ("-e", "--execute"):
+                meshing = False
+                solving = False
+                postprocessing = False
+                if arg == "all" or arg == "mesh":
+                    meshing = True
+                if arg == "all" or arg == "solve":
+                    solving = True
+                if arg == "all" or arg == "post_process":
+                    postprocessing = True
+
+
 
     except Usage as err:
         print (err.msg, file=sys.stderr)
@@ -116,13 +128,46 @@ def main(argv=None):
 
     machine = RotatingMachine.create(machine_settings['machine'])
     analysis = Analysis(analysis_settings['analysis'], machine)
-    fem_geometry = analysis.create_model()
-    meshed = analysis.mesh_model()
-    solved = analysis.solve_model()
-    if solved:
-        results = analysis.post_processing()
+    if meshing:
+        created = analysis.create_model()
+        if created:
+            meshed = analysis.mesh_model()
+            if not meshed:
+                print('Not Meshed')
+                return False
+        else:
+            print ('Not Created')
+            return False
+    if solving:
+        solved = analysis.solve_model()
+        if not solved:
+            print('Not Solved')
+            return False
+
+    if postprocessing:
+        res = analysis.post_processing()
+
+        if plot:
+            import matplotlib.pyplot as plt
+            plt.figure(1)
+            plt.title('Air Gap Flux Density')
+            plt.subplot(211)
+            plt.plot(res.nl_Bg_theta, res.nl_Bg_r[0], label='No Load')
+            #plt.plot(res.nl_Bg_theta, res.ol_Bg_r, label='On Load')
+            plt.legend()
+            plt.subplot(212)
+            plt.plot(res.nl_Bg_theta, res.nl_Bg_t[0], label='No Load')
+            #plt.plot(res.nl_Bg_theta, res.ol_Bg_t, label='On Load')
+
+            plt.figure(2)
+            plt.plot(res.cogging_torque_mst_x, res.cogging_torque_mst_y, '-o', label='MST')
+            plt.plot(res.cogging_torque_x, res.cogging_torque_y, '-o', label='AKKIO')
+            #plt.plot(res.cogging_torque_2_x, res.cogging_torque_2_y, label='AG')
+            plt.legend()
+            plt.show()
     else:
         print ('Something went wrong')
+        return False
 
     finish = time.clock()
 

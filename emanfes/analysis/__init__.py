@@ -18,3 +18,4 @@
 # ==========================================================================
 
 from .base_analysis import Analysis
+from .simulation_setup import Simulation
