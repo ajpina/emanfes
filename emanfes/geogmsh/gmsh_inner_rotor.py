@@ -61,7 +61,10 @@ class GmshInnerRotor:
         if self.rotor_core_mesh_size == 0:
             self.rotor_core_mesh_size = self.shaft_mesh_size / 2.0
 
-        self.rotor_airgap_points, self.rotor_airgap_lines = rotating_machine.rotor.get_rotor_airgap_geometry( (self.Sir + self.Ror) / 2.0)
+        airgap_lenght = (self.Sir - self.Ror)
+        airgap_radius_1 = self.Ror + (2.0 / 3.0) * airgap_lenght
+        airgap_radius_2 = self.Ror + (1.0 / 3.0) * airgap_lenght
+        self.rotor_airgap_points, self.rotor_airgap_lines = rotating_machine.rotor.get_rotor_airgap_geometry( airgap_radius_2)
         self.rotor_airgap_mesh_size = self._get_mesh_size(self.rotor_airgap_points, div=40.0)
         if self.rotor_airgap_mesh_size == 0:
             self.rotor_airgap_mesh_size = self.magnet_mesh_size / 20.0
@@ -242,6 +245,8 @@ class GmshInnerRotor:
         model.mesh.generate(2)
         gmsh.write("rotor.msh")
         gmsh.finalize()
+
+        return True
 
 
 

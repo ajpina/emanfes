@@ -45,8 +45,9 @@ class GeometryGmsh:
         self.rotor = GmshInnerRotor(simulation, rotating_machine)
 
     def create(self):
-        self.stator.create()
-        self.rotor.create()
+        sf = self.stator.create()
+        rf = self.rotor.create()
+        return sf and rf
 
     def get_fractions_drawn(self):
         sf = self.stator.get_fractions_drawn()

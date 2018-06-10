@@ -49,15 +49,17 @@ class ElmerSolver:
         self.r_ag2 = rotating_machine.stator.inner_radius
         self.r_middle_ag = (self.r_ag1 + self.r_ag2) / 2.0
         self.stack_length = (rotating_machine.rotor.stack_length + rotating_machine.stator.stack_length) / 2.0
+        self.stator_axis = rotating_machine.stator.winding.get_armature_a_axis()
+        self.conductor_area = rotating_machine.stator.winding.get_coilside_conductor_area()
         Fe = (self.wm * self.pp) / 60.0
         T = 1.0 / Fe
         self.time_step = T / 180.0
-        self.steps = 90
+        self.steps = 180
         self.fractions = self.gmsh_model.get_fractions_drawn()
 
 
     def create(self):
-        self.gmsh_model.create()
+        return self.gmsh_model.create()
 
     def mesh(self):
         cmd_stator = ['ElmerGrid', '14', '2', 'stator.msh', '-2d', '-autoclean', '-names']
@@ -104,6 +106,13 @@ class ElmerSolver:
             fo.write("$ PP = {0}                ! Pole pairs\n".format( self.pp ) )
             fo.write("$ WE = PP*WM              ! Electrical Frequency [Hz]\n" )
             fo.write("$ H_PM = {0}/(pi*4d-7)    ! Magnetisation Magnets [A/m]\n".format( self.h_pm ) )
+            fo.write("$ Shift = 2*pi/3          ! Three-phase machine [rad]\n")
+            fo.write("$ Gamma = 0               ! Current Angle [rad]\n")
+            fo.write("$ Ncond = 20              ! Conductors per coil\n")
+            fo.write("$ Cp = 3                  ! Parallel paths\n")
+            fo.write("$ Is = 100                ! Stator current [A]\n")
+            fo.write("$ Aaxis = {0}             ! Axis Coil A [deg]\n".format(self.stator_axis))
+            fo.write("$ Carea = {0}             ! Coil Side Conductor Area [m2]\n".format(self.conductor_area))
             fo.write("\nHeader\n"
                         "\tCHECK KEYWORDS Warn\n"
                         "\tMesh DB \"machine\"\n"
@@ -155,21 +164,27 @@ class ElmerSolver:
                      "End\n")
 
             fo.write("\nMaterial 5\n"
+                     "\tName = \"Copper\"\n"
+                     "\tRelative Permeability = 1\n"
+                     "\tElectric Conductivity = 48e6\n"
+                     "End\n")
+
+            fo.write("\nMaterial 6\n"
                         "\tName = \"PM_1\"\n"
                         "\tRelative Permeability = {0}\n"
                         "\tMagnetization 1 = Variable time, timestep size\n"
-                            "\t\tReal MATC  \"H_PM*cos(WM*(tx(0)-tx(1)))\"\n"
+                            "\t\tReal MATC  \"H_PM*cos(WM*(tx(0)-tx(1)) + Aaxis*pi/180)\"\n"
                         "\tMagnetization 2 = Variable time, timestep size\n"
-                            "\t\tReal MATC \"H_PM*sin(WM*(tx(0)-tx(1)))\"\n"
+                            "\t\tReal MATC \"H_PM*sin(WM*(tx(0)-tx(1)) + Aaxis*pi/180)\"\n"
                     "End\n".format( self.mur_pm ) )
 
-            fo.write("\nMaterial 6\n"
+            fo.write("\nMaterial 7\n"
                         "\tName = \"PM_2\"\n"
                         "\tRelative Permeability = {0}\n"
                         "\tMagnetization 1 = Variable time, timestep size\n"
-                            "\t\tReal MATC  \"H_PM*cos(WM*(tx(0)-tx(1))+2*pi/PP/2+pi)\"\n"
+                            "\t\tReal MATC  \"H_PM*cos(WM*(tx(0)-tx(1))+2*pi/PP/2+pi + Aaxis*pi/180)\"\n"
                         "\tMagnetization 2 = Variable time, timestep size\n"
-                            "\t\tReal MATC \"H_PM*sin(WM*(tx(0)-tx(1))+2*pi/PP/2+pi)\"\n"
+                            "\t\tReal MATC \"H_PM*sin(WM*(tx(0)-tx(1))+2*pi/PP/2+pi + Aaxis*pi/180)\"\n"
                      "End\n".format(self.mur_pm))
 
             fo.write("\n!--- BODY FORCES ---\n")
@@ -178,8 +193,80 @@ class ElmerSolver:
                         "\tName = \"BodyForce_Rotation\"\n"
                         "\t$omega = (180/pi)*WM\n"
                         "\tMesh Rotate 3 = Variable time, timestep size\n"
-                            "\t\tReal MATC \"omega*(tx(0)-tx(1))\"\n"
+                            "\t\tReal MATC \"omega*(tx(0)-tx(1)) + Aaxis\"\n"
                         "End\n")
+
+            fo.write("Body Force 2\n"
+                     "\tName = \"J_A_PLUS\"\n"
+                     "\tCurrent Density = Variable time, timestep size\n"
+                     "\t\tReal MATC \"(Is/Carea) * (Ncond/Cp) * sin(WE * (tx(0)-tx(1)) + Gamma)\"\n"
+                     "End\n")
+
+            fo.write("Body Force 3\n"
+                     "\tName = \"J_A_MINUS\"\n"
+                     "\tCurrent Density = Variable time, timestep size\n"
+                     "\t\tReal MATC \"-(Is/Carea) * (Ncond/Cp) * sin(WE * (tx(0)-tx(1)) + Gamma)\"\n"
+                     "End\n")
+
+            fo.write("Body Force 4\n"
+                     "\tName = \"J_B_PLUS\"\n"
+                     "\tCurrent Density = Variable time, timestep size\n"
+                     "\t\tReal MATC \"(Is/Carea) * (Ncond/Cp) * sin(WE * (tx(0)-tx(1)) - Shift + Gamma)\"\n"
+                     "End\n")
+
+            fo.write("Body Force 5\n"
+                     "\tName = \"J_B_MINUS\"\n"
+                     "\tCurrent Density = Variable time, timestep size\n"
+                     "\t\tReal MATC \"-(Is/Carea) * (Ncond/Cp) * sin(WE * (tx(0)-tx(1)) - Shift + Gamma)\"\n"
+                     "End\n")
+
+            fo.write("Body Force 6\n"
+                     "\tName = \"J_C_PLUS\"\n"
+                     "\tCurrent Density = Variable time, timestep size\n"
+                     "\t\tReal MATC \"(Is/Carea) * (Ncond/Cp) * sin(WE * (tx(0)-tx(1)) - 2*Shift + Gamma)\"\n"
+                     "End\n")
+
+            fo.write("Body Force 7\n"
+                     "\tName = \"J_C_MINUS\"\n"
+                     "\tCurrent Density = Variable time, timestep size\n"
+                     "\t\tReal MATC \"-(Is/Carea) * (Ncond/Cp) * sin(WE * (tx(0)-tx(1)) - 2*Shift + Gamma)\"\n"
+                     "End\n")
+
+            fo.write("Body Force 8\n"
+                     "\tName = \"J_D_PLUS\"\n"
+                     "\tCurrent Density = Variable time, timestep size\n"
+                     "\t\tReal MATC \"(Is/Carea) * (Ncond/Cp) * sin(WE * (tx(0)-tx(1)) - 3*Shift + Gamma)\"\n"
+                     "End\n")
+
+            fo.write("Body Force 9\n"
+                     "\tName = \"J_D_MINUS\"\n"
+                     "\tCurrent Density = Variable time, timestep size\n"
+                     "\t\tReal MATC \"-(Is/Carea) * (Ncond/Cp) * sin(WE * (tx(0)-tx(1)) - 3*Shift + Gamma)\"\n"
+                     "End\n")
+
+            fo.write("Body Force 10\n"
+                     "\tName = \"J_E_PLUS\"\n"
+                     "\tCurrent Density = Variable time, timestep size\n"
+                     "\t\tReal MATC \"(Is/Carea) * (Ncond/Cp) * sin(WE * (tx(0)-tx(1)) - 4*Shift + Gamma)\"\n"
+                     "End\n")
+
+            fo.write("Body Force 11\n"
+                     "\tName = \"J_E_MINUS\"\n"
+                     "\tCurrent Density = Variable time, timestep size\n"
+                     "\t\tReal MATC \"-(Is/Carea) * (Ncond/Cp) * sin(WE * (tx(0)-tx(1)) - 4*Shift + Gamma)\"\n"
+                     "End\n")
+
+            fo.write("Body Force 12\n"
+                     "\tName = \"J_F_PLUS\"\n"
+                     "\tCurrent Density = Variable time, timestep size\n"
+                     "\t\tReal MATC \"(Is/Carea) * (Ncond/Cp) * sin(WE * (tx(0)-tx(1)) - 5*Shift + Gamma)\"\n"
+                     "End\n")
+
+            fo.write("Body Force 13\n"
+                     "\tName = \"J_F_MINUS\"\n"
+                     "\tCurrent Density = Variable time, timestep size\n"
+                     "\t\tReal MATC \"-(Is/Carea) * (Ncond/Cp) * sin(WE * (tx(0)-tx(1)) - 5*Shift + Gamma)\"\n"
+                     "End\n")
 
             fo.write("\n!--- BODIES ---\n")
             for k, v in bodies.items():
@@ -327,8 +414,12 @@ class ElmerSolver:
                             "\tMortar BC = Integer {2}\n"
                             "\tRotational Projector = Logical True\n"
                             "\tGalerkin Projector = Logical True\n"
-                            "\tSave Line = True\n"
                             "End\n\n".format(v, k, slave))
+                elif k == "STATOR_AIRGAP_ARC_BOUNDARY":
+                    fo.write("Boundary Condition {0}\n"
+                            "\tName = {1}\n"
+                            "\tSave Line = True\n"
+                            "End\n\n".format(v, k))
                 else:
                     fo.write("Boundary Condition {0}\n"
                              "\tName = {1}\n"
