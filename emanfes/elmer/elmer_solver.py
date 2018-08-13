@@ -45,7 +45,10 @@ class ElmerSolver:
         self.wm = simulation.load_speed
         self.h_pm = rotating_machine.rotor.magnets[0].material.Br / rotating_machine.rotor.magnets[0].material.mur
         self.mur_pm = rotating_machine.rotor.magnets[0].material.mur
-        self.r_ag1 = rotating_machine.rotor.outer_radius + rotating_machine.rotor.magnets[0].length
+        if rotating_machine.get_machine_type() == "SPM":
+            self.r_ag1 = rotating_machine.rotor.outer_radius + rotating_machine.rotor.magnets[0].length
+        else:
+            self.r_ag1 = rotating_machine.rotor.outer_radius
         self.r_ag2 = rotating_machine.stator.inner_radius
         self.r_middle_ag = (self.r_ag1 + self.r_ag2) / 2.0
         self.stack_length = (rotating_machine.rotor.stack_length + rotating_machine.stator.stack_length) / 2.0
@@ -54,8 +57,14 @@ class ElmerSolver:
         Fe = (self.wm * self.pp) / 60.0
         T = 1.0 / Fe
         self.time_step = T / 180.0
-        self.steps = 180
+        self.steps = 3
         self.fractions = self.gmsh_model.get_fractions_drawn()
+        self.magnets_drawn = int(2 * self.pp / self.fractions)
+        if self.magnets_drawn % 2 == 0:
+            self.is_even = True
+        else:
+            self.is_even = False
+
 
 
     def create(self):
@@ -169,23 +178,16 @@ class ElmerSolver:
                      "\tElectric Conductivity = 48e6\n"
                      "End\n")
 
-            fo.write("\nMaterial 6\n"
-                        "\tName = \"PM_1\"\n"
-                        "\tRelative Permeability = {0}\n"
-                        "\tMagnetization 1 = Variable time, timestep size\n"
-                            "\t\tReal MATC  \"H_PM*cos(WM*(tx(0)-tx(1)) + Aaxis*pi/180)\"\n"
-                        "\tMagnetization 2 = Variable time, timestep size\n"
-                            "\t\tReal MATC \"H_PM*sin(WM*(tx(0)-tx(1)) + Aaxis*pi/180)\"\n"
-                    "End\n".format( self.mur_pm ) )
-
-            fo.write("\nMaterial 7\n"
-                        "\tName = \"PM_2\"\n"
-                        "\tRelative Permeability = {0}\n"
-                        "\tMagnetization 1 = Variable time, timestep size\n"
-                            "\t\tReal MATC  \"H_PM*cos(WM*(tx(0)-tx(1))+2*pi/PP/2+pi + Aaxis*pi/180)\"\n"
-                        "\tMagnetization 2 = Variable time, timestep size\n"
-                            "\t\tReal MATC \"H_PM*sin(WM*(tx(0)-tx(1))+2*pi/PP/2+pi + Aaxis*pi/180)\"\n"
-                     "End\n".format(self.mur_pm))
+            for m in range(1, self.magnets_drawn + 1):
+                mat_number = 5 + m
+                fo.write("\nMaterial {0}\n"
+                            "\tName = \"PM_{1}\"\n"
+                            "\tRelative Permeability = {2}\n"
+                            "\tMagnetization 1 = Variable time, timestep size\n"
+                                "\t\tReal MATC  \"H_PM*cos(WM*(tx(0)-tx(1)) + {3}*pi/PP + {3}*pi + Aaxis*pi/180)\"\n"
+                            "\tMagnetization 2 = Variable time, timestep size\n"
+                                "\t\tReal MATC \"H_PM*sin(WM*(tx(0)-tx(1)) + {3}*pi/PP + {3}*pi + Aaxis*pi/180)\"\n"
+                        "End\n".format( mat_number, m, self.mur_pm, m-1 ) )
 
             fo.write("\n!--- BODY FORCES ---\n")
 
@@ -385,25 +387,43 @@ class ElmerSolver:
                         if k1 == "STATOR_SLAVE_BOUNDARY":
                             slave = v1
                             break
-                    fo.write("Boundary Condition {0}\n"
-                            "\tName = {1}\n"
-                            "\tMortar BC = Integer {2}\n"
-                            "\tMortar BC Static = Logical True\n"
-                            "\tRadial Projector = Logical True\n" 
-                            "\tGalerkin Projector = Logical True\n"
-                            "End\n\n".format(v, k, slave))
+                    if self.is_even:
+                        fo.write("Boundary Condition {0}\n"
+                                "\tName = {1}\n"
+                                "\tMortar BC = Integer {2}\n"
+                                "\tMortar BC Static = Logical True\n"
+                                "\tRadial Projector = Logical True\n" 
+                                "\tGalerkin Projector = Logical True\n"
+                                "End\n\n".format(v, k, slave))
+                    else:
+                        fo.write("Boundary Condition {0}\n"
+                                 "\tName = {1}\n"
+                                 "\tMortar BC = Integer {2}\n"
+                                 "\tMortar BC Static = Logical True\n"
+                                 "\tAnti Radial Projector = Logical True\n"
+                                 "\tGalerkin Projector = Logical True\n"
+                                 "End\n\n".format(v, k, slave))
                 elif k == "ROTOR_MASTER_BOUNDARY":
                     for k1, v1 in boundaries.items():
                         if k1 == "ROTOR_SLAVE_BOUNDARY":
                             slave = v1
                             break
-                    fo.write("Boundary Condition {0}\n"
-                            "\tName = {1}\n"
-                            "\tMortar BC = Integer {2}\n"
-                            "\tMortar BC Static = Logical True\n"
-                            "\tRadial Projector = Logical True\n" 
-                            "\tGalerkin Projector = Logical True\n"
-                            "End\n\n".format(v, k, slave))
+                    if self.is_even:
+                        fo.write("Boundary Condition {0}\n"
+                                "\tName = {1}\n"
+                                "\tMortar BC = Integer {2}\n"
+                                "\tMortar BC Static = Logical True\n"
+                                "\tRadial Projector = Logical True\n" 
+                                "\tGalerkin Projector = Logical True\n"
+                                "End\n\n".format(v, k, slave))
+                    else:
+                        fo.write("Boundary Condition {0}\n"
+                                 "\tName = {1}\n"
+                                 "\tMortar BC = Integer {2}\n"
+                                 "\tMortar BC Static = Logical True\n"
+                                 "\tAnti Radial Projector = Logical True\n"
+                                 "\tGalerkin Projector = Logical True\n"
+                                 "End\n\n".format(v, k, slave))
                 elif k == "STATOR_SLIDING_BOUNDARY":
                     for k1, v1 in boundaries.items():
                         if k1 == "ROTOR_SLIDING_BOUNDARY":

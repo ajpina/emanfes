@@ -43,7 +43,10 @@ class GmshOuterStator:
     def __init__(self, simulation, rotating_machine):
         self.Sir = rotating_machine.stator.inner_radius
         self.Sor = rotating_machine.stator.outer_radius
-        self.Ror = rotating_machine.rotor.outer_radius + rotating_machine.rotor.magnets[0].length
+        if rotating_machine.get_machine_type() == "SPM":
+            self.Ror = rotating_machine.rotor.outer_radius + rotating_machine.rotor.magnets[0].length
+        else:
+            self.Ror = rotating_machine.rotor.outer_radius
         self.Ns = rotating_machine.stator.slots_number
         self.conn_matrix = rotating_machine.stator.winding.conn_matrix
         self.LayersType = rotating_machine.stator.winding.conductors.get_type()
@@ -129,12 +132,16 @@ class GmshOuterStator:
             return mesh_size_y
 
     def _get_surface(self, points, lines, dx, dy, dz, model, mesh_size=1):
-        for point in points:
-            p = int(point)
-            x = points[point][0] + dx
-            y = points[point][1] + dy
-            z = points[point][2] + dz
-            model.geo.addPoint(x, y, z, meshSize=mesh_size, tag=p)
+        if points is None and lines is None:
+            return None
+
+        if points is not None:
+            for point in points:
+                p = int(point)
+                x = points[point][0] + dx
+                y = points[point][1] + dy
+                z = points[point][2] + dz
+                model.geo.addPoint(x, y, z, meshSize=mesh_size, tag=p)
 
         wire = []
         for line in lines:
@@ -170,6 +177,7 @@ class GmshOuterStator:
             elif len(lp) == 2:
                 p1 = lp[0]
                 p2 = lp[1]
+                print(p1, p2, l)
                 model.geo.addLine(p1, p2, l)
             elif len(lp) == 3:
                 p1 = lp[0]
@@ -250,6 +258,20 @@ class GmshOuterStator:
         elif slots_c_minus[i]:
             c_minus_surf.append(tmp_surface)
 
+        coil_surfaces = [a_plus_surf, a_minus_surf,
+                         b_plus_surf, b_minus_surf,
+                         c_plus_surf, c_minus_surf]
+
+        return coil_surfaces
+
+
+    def _create_physical_coils(self, coil_surfaces, model):
+        a_plus_surf = coil_surfaces[0]
+        a_minus_surf = coil_surfaces[1]
+        b_plus_surf = coil_surfaces[2]
+        b_minus_surf = coil_surfaces[3]
+        c_plus_surf = coil_surfaces[4]
+        c_minus_surf = coil_surfaces[5]
 
         if len(a_plus_surf) > 0:
             group = [surf[0][1] for surf in a_plus_surf]
@@ -336,30 +358,11 @@ class GmshOuterStator:
             c_minus_surf.append(tmp_surface)
             c_minus_surf.append(tmp_surface_mirror)
 
-        if len(a_plus_surf) > 0:
-            group = [surf[0][1] for surf in a_plus_surf]
-            model.addPhysicalGroup(2, group, 220)
-            model.setPhysicalName(2, 220, "A_PLUS")
-        if len(a_minus_surf) > 0:
-            group = [surf[0][1] for surf in a_minus_surf]
-            model.addPhysicalGroup(2, group, 221)
-            model.setPhysicalName(2, 221, "A_MINUS")
-        if len(b_plus_surf) > 0:
-            group = [surf[0][1] for surf in b_plus_surf]
-            model.addPhysicalGroup(2, group, 222)
-            model.setPhysicalName(2, 222, "B_PLUS")
-        if len(b_minus_surf) > 0:
-            group = [surf[0][1] for surf in b_minus_surf]
-            model.addPhysicalGroup(2, group, 223)
-            model.setPhysicalName(2, 223, "B_MINUS")
-        if len(c_plus_surf) > 0:
-            group = [surf[0][1] for surf in c_plus_surf]
-            model.addPhysicalGroup(2, group, 224)
-            model.setPhysicalName(2, 224, "C_PLUS")
-        if len(c_minus_surf) > 0:
-            group = [surf[0][1] for surf in c_minus_surf]
-            model.addPhysicalGroup(2, group, 225)
-            model.setPhysicalName(2, 225, "C_MINUS")
+        coil_surfaces = [a_plus_surf, a_minus_surf,
+                         b_plus_surf, b_minus_surf,
+                         c_plus_surf, c_minus_surf]
+
+        return coil_surfaces
 
 
 
@@ -405,35 +408,48 @@ class GmshOuterStator:
         factory.addPoint(0, 0, 0, 1e-1, 1)
 
         slot_opening_surface = self._get_surface( self.slot_opening_points, self.slot_opening_lines,
-                                                 self.Sir, 0, 0, model, self.slot_opening_mesh_size)
+                                                 0, 0, 0, model, self.slot_opening_mesh_size)
         slot_wedge_surface = self._get_surface( self.slot_wedge_points, self.slot_wedge_lines,
-                                               self.Sir, 0, 0, model, self.slot_wedge_mesh_size)
+                                               0, 0, 0, model, self.slot_wedge_mesh_size)
+
+
+
         conductor_surface = []
         for i in range(0,len(self.conductors_list)):
             conductor_surface.append( self._get_surface( self.conductors_list[i][0], self.conductors_list[i][1],
                                                0, 0, 0, model, self.conductors_mesh_size) )
 
+
+
         backiron_surface = self._get_surface(self.backiron_points, self.backiron_lines,
                                              0, 0, 0, model, self.backiron_mesh_size)
+
+
 
         tooth_surface = self._get_surface(self.tooth_points, self.tooth_lines,
                                             0, 0, 0, model, self.tooth_mesh_size)
 
         coil_area_surface = self._get_surface_with_holes(self.coil_area_lines, conductor_surface, model)
 
+
         toothtip_surface = self._get_surface(self.toothtip_points, self.toothtip_lines,
                                             0, 0, 0, model, self.toothtip_mesh_size)
+
+
+
         stator_airgap_surface = self._get_surface(self.stator_airgap_points, self.stator_airgap_lines,
                                              0, 0, 0, model, self.stator_airgap_mesh_size)
         sliding_airgap_surface = self._get_surface(self.sliding_airgap_points, self.sliding_airgap_lines,
                                                   0, 0, 0, model, self.sliding_airgap_mesh_size)
+
 
         slot_opening_surface_mirror = self._get_surface_mirror(slot_opening_surface[-1], model)
         conductor_surface_mirror = []
         for i in range(0,len(self.conductors_list)):
             conductor_surface_mirror.append( self._get_surface_mirror( conductor_surface[i], model ) )
 
-        slot_wedge_surface_mirror = self._get_surface_mirror(slot_wedge_surface[-1], model)
+        if slot_wedge_surface is not None:
+            slot_wedge_surface_mirror = self._get_surface_mirror(slot_wedge_surface[-1], model)
 
         backiron_surface_mirror = self._get_surface_mirror(backiron_surface[-1], model)
         tooth_surface_mirror = self._get_surface_mirror(tooth_surface[-1], model)
@@ -454,22 +470,32 @@ class GmshOuterStator:
 
         self._copy_and_rotate_surfaces(slot_opening_surface, slot_opening_surface_mirror, self.nCopies, slot_pitch,
                                        206, "SLOT_OPENINGS", model)
-        self._copy_and_rotate_surfaces(slot_wedge_surface, slot_wedge_surface_mirror, self.nCopies, slot_pitch,
+        if slot_wedge_surface is not None:
+            self._copy_and_rotate_surfaces(slot_wedge_surface, slot_wedge_surface_mirror, self.nCopies, slot_pitch,
                                        207, "SLOT_WEDGES", model)
 
+
         if self.LayersType == 'OneLayer':
-            self._merge_copy_and_rotate_coil_surfaces(conductor_surface, conductor_surface_mirror, self.conn_matrix[:3,:],
+            coil_surfaces = self._merge_copy_and_rotate_coil_surfaces(conductor_surface, conductor_surface_mirror, self.conn_matrix[:3,:],
                                                       self.nCopies, slot_pitch, model)
+            coil_mirror_surfaces = []
         elif self.LayersType == 'DualLayer_SideBySide':
-            self._copy_and_rotate_coil_surfaces(conductor_surface, self.conn_matrix[3:, :], self.nCopies, slot_pitch,
-                                                model)
-            self._copy_and_rotate_coil_surfaces(conductor_surface_mirror, self.conn_matrix[:3, :], self.nCopies,
-                                                slot_pitch, model)
+            coil_surfaces = self._copy_and_rotate_coil_surfaces(conductor_surface, self.conn_matrix[3:, :],
+                                                                self.nCopies, slot_pitch, model)
+            coil_mirror_surfaces = self._copy_and_rotate_coil_surfaces(conductor_surface_mirror, self.conn_matrix[:3, :],
+                                                                self.nCopies, slot_pitch, model)
+
+
         elif self.LayersType == 'DualLayer_TopBottom':
-            self._merge_copy_and_rotate_coil_surfaces([conductor_surface[0]], [conductor_surface_mirror[0]],
+            coil_surfaces = self._merge_copy_and_rotate_coil_surfaces([conductor_surface[0]], [conductor_surface_mirror[0]],
                                                       self.conn_matrix[:3, :], self.nCopies, slot_pitch, model)
-            self._merge_copy_and_rotate_coil_surfaces([conductor_surface[1]], [conductor_surface_mirror[1]],
+            coil_mirror_surfaces = self._merge_copy_and_rotate_coil_surfaces([conductor_surface[1]], [conductor_surface_mirror[1]],
                                                     self.conn_matrix[3:, :], self.nCopies, slot_pitch, model)
+
+        for i in range(0, 6):
+            coil_surfaces[i].extend(coil_mirror_surfaces[i])
+
+        self._create_physical_coils(coil_surfaces, model)
 
         self._copy_and_rotate_surfaces(coil_area_surface, coil_area_surface_mirror, self.nCopies, slot_pitch,
                                        208, "COIL_AREAS", model)

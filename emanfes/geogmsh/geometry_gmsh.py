@@ -41,8 +41,15 @@ class GeometryGmsh:
     def __init__(self, simulation, rotating_machine):
         from emanfes.geogmsh import GmshOuterStator
         self.stator = GmshOuterStator(simulation, rotating_machine)
-        from emanfes.geogmsh import GmshInnerRotor
-        self.rotor = GmshInnerRotor(simulation, rotating_machine)
+        if rotating_machine.get_machine_type() == "SPM":
+            from emanfes.geogmsh import GmshSPMInnerRotor
+            self.rotor = GmshSPMInnerRotor(simulation, rotating_machine)
+        elif rotating_machine.get_machine_type() == "IPM":
+            from emanfes.geogmsh import GmshIPMInnerRotor
+            self.rotor = GmshIPMInnerRotor(simulation, rotating_machine)
+        else:
+            from emanfes.geogmsh import GmshIPMInnerRotor
+            self.rotor = GmshIPMInnerRotor(simulation, rotating_machine)
 
     def create(self):
         sf = self.stator.create()

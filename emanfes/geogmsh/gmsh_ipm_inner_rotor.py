@@ -22,7 +22,7 @@
 """
 
 # ==========================================================================
-# Program:   gmsh_inner_rotor.py
+# Program:   gmsh_spm_inner_rotor.py
 # Author:    ajpina
 # Date:      12/23/17
 # Version:   0.1.1
@@ -38,12 +38,12 @@ import gmsh
 from emanfes.misc.constants import *
 
 
-class GmshInnerRotor:
+class GmshIPMInnerRotor:
 
     def __init__(self, simulation, rotating_machine):
         self.Sir = rotating_machine.stator.inner_radius
         self.Rir = rotating_machine.rotor.inner_radius
-        self.Ror = rotating_machine.rotor.outer_radius + rotating_machine.rotor.magnets[0].length
+        self.Ror = rotating_machine.rotor.outer_radius
         self.Ns = rotating_machine.stator.slots_number
         self.pp = rotating_machine.rotor.pp
         self.nCopies = int( 2 * self.pp / GCD(self.Ns, 2 * self.pp) )
@@ -56,8 +56,13 @@ class GmshInnerRotor:
         if self.magnet_mesh_size == 0:
             self.magnet_mesh_size = self.shaft_mesh_size / 2.0
 
+        self.pocket_points, self.pocket_lines = rotating_machine.rotor.get_pocket_geometry()
+        self.pocket_mesh_size = self._get_mesh_size(self.pocket_points, div=10.0)
+        if self.pocket_mesh_size == 0:
+            self.pocket_mesh_size = self.magnet_mesh_size / 2.0
+
         self.rotor_core_points, self.rotor_core_lines = rotating_machine.rotor.get_core_geometry()
-        self.rotor_core_mesh_size = self._get_mesh_size(self.rotor_core_points, div=5.0)
+        self.rotor_core_mesh_size = self._get_mesh_size(self.rotor_core_points, div=10.0)
         if self.rotor_core_mesh_size == 0:
             self.rotor_core_mesh_size = self.shaft_mesh_size / 2.0
 
@@ -134,6 +139,44 @@ class GmshInnerRotor:
         surface.append(np.array([[2, model.geo.addPlaneSurface([line_loop])]]))
         return surface
 
+
+    def _get_surface_with_holes(self, points, lines, dx, dy, dz, holes, model, mesh_size=1):
+        for point in points:
+            p = int(point)
+            x = points[point][0] + dx
+            y = points[point][1] + dy
+            z = points[point][2] + dz
+            model.geo.addPoint(x, y, z, meshSize=mesh_size, tag=p)
+
+        wire = []
+        for line in lines:
+            l = int(line)
+            lp = lines[line]
+            if len(lp) == 1:
+                pass
+            elif len(lp) == 2:
+                p1 = lp[0]
+                p2 = lp[1]
+                model.geo.addLine(p1, p2, l)
+            elif len(lp) == 3:
+                p1 = lp[0]
+                p2 = lp[1]
+                p3 = lp[2]
+                model.geo.addCircleArc(p1, p2, p3, l)
+            else:
+                return False
+            wire.append(l)
+
+        line_loop = model.geo.addCurveLoop(wire)
+        surf_and_holes = [surf[0][0][1] for surf in holes]
+        surf_and_holes.insert(0, line_loop)
+        print("surface and holes",surf_and_holes)
+        surface = []
+        surface.append(np.array([[2, model.geo.addPlaneSurface(surf_and_holes)]], dtype=np.int32))
+        print(surface)
+        return surface
+
+
     def _get_surface_mirror(self, surface, model):
         surface_mirror = []
         surface_mirror.append(model.geo.copy(surface))
@@ -159,9 +202,9 @@ class GmshInnerRotor:
         model.setPhysicalName(2, id[0], name[0])
         for i in range(1, amount):
             new_surface = model.geo.copy(surface[-1])
-            model.geo.rotate( new_surface[-1], 0, 0, 0, 0, 0, 1, pitch)
+            model.geo.rotate( new_surface[-1], 0, 0, 0, 0, 0, 1, i*pitch)
             new_surface_mirror = model.geo.copy(surface_mirror[-1])
-            model.geo.rotate(new_surface_mirror[-1], 0, 0, 0, 0, 0, 1, pitch)
+            model.geo.rotate(new_surface_mirror[-1], 0, 0, 0, 0, 0, 1, i*pitch)
             group = [new_surface[0][1], new_surface_mirror[0][1]]
             model.addPhysicalGroup(2, group, id[i])
             model.setPhysicalName(2, id[i], name[i])
@@ -212,13 +255,17 @@ class GmshInnerRotor:
                                                   0, 0, 0, model, self.shaft_mesh_size)
         magnet_surface = self._get_surface( self.magnet_points, self.magnet_lines,
                                                 0, 0, 0, model, self.magnet_mesh_size)
-        rotor_core_surface = self._get_surface(self.rotor_core_points, self.rotor_core_lines,
-                                               0, 0, 0, model, self.rotor_core_mesh_size)
+        pocket_surface = self._get_surface( self.pocket_points, self.pocket_lines,
+                                                0, 0, 0, model, self.pocket_mesh_size)
+        rotor_core_surface = self._get_surface_with_holes(self.rotor_core_points, self.rotor_core_lines,
+                                               0, 0, 0, [magnet_surface, pocket_surface], model, self.rotor_core_mesh_size)
+
         rotor_airgap_surface = self._get_surface(self.rotor_airgap_points, self.rotor_airgap_lines,
                                               0, 0, 0, model, self.rotor_airgap_mesh_size)
 
         shaft_surface_mirror = self._get_surface_mirror(shaft_surface[-1], model)
         magnet_surface_mirror = self._get_surface_mirror( magnet_surface[-1], model )
+        pocket_surface_mirror = self._get_surface_mirror( pocket_surface[-1], model )
         rotor_core_surface_mirror = self._get_surface_mirror( rotor_core_surface[-1], model )
         rotor_airgap_surface_mirror = self._get_surface_mirror(rotor_airgap_surface[-1], model)
 
@@ -235,15 +282,24 @@ class GmshInnerRotor:
 
         self._copy_and_rotate_surfaces(rotor_core_surface, rotor_core_surface_mirror, self.nCopies, pole_pitch,
                                         105, "ROTORCORES", model)
+        self._copy_and_rotate_surfaces(pocket_surface, pocket_surface_mirror, self.nCopies, pole_pitch,
+                                        106, "ROTORPOCKETS", model)
         self._copy_and_rotate_surfaces(rotor_airgap_surface, rotor_airgap_surface_mirror, self.nCopies, pole_pitch,
-                                        106, "ROTOR_AIRGAPS", model)
+                                        107, "ROTOR_AIRGAPS", model)
+        magnets_id = [108]
+        magnets_name = ["MAGNETS1"]
+        for i in range(2, self.nCopies + 1):
+            magnets_id.append(int(107 + i))
+            label = "MAGNETS%d" % i
+            magnets_name.append(label)
         self._rotate_surfaces_with_new_name(magnet_surface, magnet_surface_mirror, self.nCopies, pole_pitch,
-                                            [107, 108], ["MAGNETS1", "MAGNETS2"], model)
+                                            magnets_id, magnets_name, model)
 
 
         factory.synchronize()
         model.mesh.generate(2)
         gmsh.write("rotor.msh")
+        #gmsh.fltk.run()
         gmsh.finalize()
 
         return True
