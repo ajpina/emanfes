@@ -297,9 +297,9 @@ class GmshIPMInnerRotor:
 
 
         factory.synchronize()
+        #gmsh.fltk.run()
         model.mesh.generate(2)
         gmsh.write("rotor.msh")
-        #gmsh.fltk.run()
         gmsh.finalize()
 
         return True

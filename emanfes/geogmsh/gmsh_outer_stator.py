@@ -512,9 +512,9 @@ class GmshOuterStator:
 
 
         factory.synchronize()
+        gmsh.fltk.run()
         model.mesh.generate(2)
         gmsh.write("stator.msh")
-        #gmsh.fltk.run()
         gmsh.finalize()
 
         return True
