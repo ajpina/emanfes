@@ -78,9 +78,9 @@ class GmshOuterStator:
             self.tooth_mesh_size = self.backiron_mesh_size
 
         self.toothtip_points, self.toothtip_lines = rotating_machine.stator.get_toothtip_geometry()
-        self.toothtip_mesh_size = self._get_mesh_size(self.toothtip_points, div=5.0)
+        self.toothtip_mesh_size = self._get_mesh_size(self.toothtip_points, div=10.0)
         if self.toothtip_mesh_size == 0:
-            self.toothtip_mesh_size = self.tooth_mesh_size
+            self.toothtip_mesh_size = self.slot_opening_mesh_size
 
         airgap_lenght = (self.Sir - self.Ror)
         airgap_radius_1 = self.Ror + (2.0/3.0) * airgap_lenght
@@ -512,8 +512,9 @@ class GmshOuterStator:
 
 
         factory.synchronize()
-        gmsh.fltk.run()
+        #gmsh.fltk.run()
         model.mesh.generate(2)
+        #gmsh.fltk.run()
         gmsh.write("stator.msh")
         gmsh.finalize()
 

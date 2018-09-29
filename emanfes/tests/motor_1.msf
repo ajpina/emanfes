@@ -193,7 +193,7 @@
       }
     },
     "rotor" : {
-      "type" : "flatstandardinner",
+      "type" : "ipm0",
       "oRr" : 18.5e-3,
       "iRr" : 6e-3,
       "pp" : 3,
