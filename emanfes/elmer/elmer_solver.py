@@ -47,18 +47,31 @@ class ElmerSolver:
         self.h_pm = rotating_machine.rotor.magnets[0].material.Br / rotating_machine.rotor.magnets[0].material.mur
         self.mur_pm = rotating_machine.rotor.magnets[0].material.mur
         if rotating_machine.get_machine_type() == "SPM":
-            self.r_ag1 = rotating_machine.rotor.outer_radius + rotating_machine.rotor.magnets[0].length
+            if rotating_machine.rotor.mode == 'inner':
+                self.r_ag1 = rotating_machine.rotor.outer_radius + rotating_machine.rotor.magnets[0].length
+                self.r_ag2 = rotating_machine.stator.inner_radius
+            else:
+                self.r_ag1 = rotating_machine.stator.outer_radius
+                self.r_ag2 = rotating_machine.rotor.inner_radius - rotating_machine.rotor.magnets[0].length
         else:
-            self.r_ag1 = rotating_machine.rotor.outer_radius
-        self.r_ag2 = rotating_machine.stator.inner_radius
+            if rotating_machine.rotor.mode == 'inner':
+                self.r_ag1 = rotating_machine.rotor.outer_radius
+                self.r_ag2 = rotating_machine.stator.inner_radius
+            else:
+                self.r_ag2 = rotating_machine.rotor.inner_radius
+                self.r_ag1 = rotating_machine.stator.outer_radius
+
         self.r_middle_ag = (self.r_ag1 + self.r_ag2) / 2.0
         self.stack_length = (rotating_machine.rotor.stack_length + rotating_machine.stator.stack_length) / 2.0
         self.stator_axis = rotating_machine.stator.winding.get_armature_a_axis()
-        self.conductor_area = rotating_machine.stator.winding.get_coilside_conductor_area()
+        # TODO: It's not working
+        #self.conductor_area = rotating_machine.stator.winding.get_coilside_conductor_area()
+        self.conductor_area = 1.0
+
         Fe = (self.wm * self.pp) / 60.0
         T = 1.0 / Fe
         self.time_step = T / 180.0
-        self.steps = 5
+        self.steps = 10
         self.fractions = self.gmsh_model.get_fractions_drawn()
         self.magnets_per_pole = rotating_machine.rotor.magnets[0].magnets_per_pole
         self.magnets_drawn = self.magnets_per_pole * int(2 * self.pp / self.fractions)
@@ -84,8 +97,8 @@ class ElmerSolver:
         return self.gmsh_model.create()
 
     def mesh(self):
-        cmd_stator = ['ElmerGrid', '14', '2', 'stator.msh', '-2d', '-autoclean', '-names']
-        cmd_rotor = ['ElmerGrid', '14', '2', 'rotor.msh', '-2d', '-autoclean', '-names']
+        cmd_stator = ['ElmerGrid', '14', '2', 'stator.msh2', '-2d', '-autoclean', '-names']
+        cmd_rotor = ['ElmerGrid', '14', '2', 'rotor.msh2', '-2d', '-autoclean', '-names']
         cmd_unite = ['ElmerGrid', '2', '2', 'stator', '-in', 'rotor', '-unite', '-autoclean', '-names', '-out', 'machine']
         process_stator = subprocess.Popen(cmd_stator, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         (stdout, stderr) = process_stator.communicate()
@@ -162,7 +175,7 @@ class ElmerSolver:
             fo.write("$ Gamma = 0               ! Current Angle [rad]\n")
             fo.write("$ Ncond = 20              ! Conductors per coil\n")
             fo.write("$ Cp = 3                  ! Parallel paths\n")
-            fo.write("$ Is = 100                ! Stator current [A]\n")
+            fo.write("$ Is = 0.0                ! Stator current [A]\n")
             fo.write("$ Aaxis = {0}             ! Axis Coil A [deg]\n".format(self.stator_axis))
             fo.write("$ Carea = {0}             ! Coil Side Conductor Area [m2]\n".format(self.conductor_area))
             fo.write("\nHeader\n"
@@ -239,6 +252,16 @@ class ElmerSolver:
                              "\tMagnetization 2 = Variable Coordinate\n"
                              "\t\tReal MATC \"H_PM*sin(atan2(tx(1),tx(0)) + {3}*pi)\"\n"
                              "End\n".format(mat_number, m, self.mur_pm, m-1 ))
+                elif self.magnets_magnetisation == "perpendicular":
+                    fo.write("\nMaterial {0}\n"
+                             "\tName = \"PM_{1}\"\n"
+                             "\tRelative Permeability = {2}\n"
+                             "\tMagnetization 1 = Variable time, timestep size\n"
+                             "\t\tReal MATC  \"H_PM*cos(WM*(tx(0)-tx(1)) + {3}*pi/PP + {3}*pi + Aaxis*pi/180 + ({4}*pi/180))\"\n"
+                             "\tMagnetization 2 = Variable time, timestep size\n"
+                             "\t\tReal MATC \"H_PM*sin(WM*(tx(0)-tx(1)) + {3}*pi/PP + {3}*pi + Aaxis*pi/180 + ({4}*pi/180))\"\n"
+                             "End\n".format(mat_number, m, self.mur_pm, int((m - 1) / self.magnets_per_pole),
+                                            self.magnetisation_angle[m - 1]))
                 else:
                     fo.write("\nMaterial {0}\n"
                              "\tName = \"PM_{1}\"\n"
@@ -438,6 +461,11 @@ class ElmerSolver:
                             "\tName = {1}\n"
                             "\tA = Real 0\n"
                             "End\n\n".format(v, k))
+                elif k == "OUTER_ROTOR_BOUNDARY":
+                    fo.write("Boundary Condition {0}\n"
+                            "\tName = {1}\n"
+                            "\tA = Real 0\n"
+                            "End\n\n".format(v, k))
                 elif k == "STATOR_MASTER_BOUNDARY":
                     for k1, v1 in boundaries.items():
                         if k1 == "STATOR_SLAVE_BOUNDARY":
@@ -485,12 +513,20 @@ class ElmerSolver:
                         if k1 == "ROTOR_SLIDING_BOUNDARY":
                             slave = v1
                             break
-                    fo.write("Boundary Condition {0}\n"
-                            "\tName = {1}\n"
-                            "\tMortar BC = Integer {2}\n"
-                            "\tRotational Projector = Logical True\n"
-                            "\tGalerkin Projector = Logical True\n"
-                            "End\n\n".format(v, k, slave))
+                    if self.is_even:
+                        fo.write("Boundary Condition {0}\n"
+                                "\tName = {1}\n"
+                                "\tMortar BC = Integer {2}\n"
+                                "\tRotational Projector = Logical True\n"
+                                "\tGalerkin Projector = Logical True\n"
+                                "End\n\n".format(v, k, slave))
+                    else:
+                        fo.write("Boundary Condition {0}\n"
+                                 "\tName = {1}\n"
+                                 "\tMortar BC = Integer {2}\n"
+                                 "\tAnti Rotational Projector = Logical True\n"
+                                 "\tGalerkin Projector = Logical True\n"
+                                 "End\n\n".format(v, k, slave))
                 elif k == "STATOR_AIRGAP_ARC_BOUNDARY":
                     fo.write("Boundary Condition {0}\n"
                             "\tName = {1}\n"
@@ -535,8 +571,8 @@ class ElmerSolver:
         #   6: res: group 1 torque
         ecp, mfe, agt, iv, im, tq = np.loadtxt('machine/scalars.dat', unpack=True, usecols=(0,1,2,3,4,5))
         x_axis = np.linspace(0, self.time_step*self.steps, self.steps)
-        #res.cogging_torque_2_x = x_axis
-        #res.cogging_torque_2_y = agt * self.fractions * self.stack_length
+        res.cogging_torque_2_x = x_axis
+        res.cogging_torque_2_y = agt * self.stack_length
         res.cogging_torque_x = x_axis
         res.cogging_torque_y = tq * self.fractions * self.stack_length
 
@@ -559,7 +595,7 @@ class ElmerSolver:
         data = np.loadtxt('machine/lines.dat', usecols=(0,4,5,7,8,10,11))
         Br_list = []
         Bt_list = []
-        theta_fine = np.linspace(0, 2*PI, num=720)
+
         for i in range(1, self.steps+1 ):
             index = np.where(data==i)
             data_step = data[index[0]]
@@ -569,14 +605,17 @@ class ElmerSolver:
             Bt1 = -np.multiply(data_step[:, 3], np.sin(theta)) + np.multiply(data_step[:, 4], np.cos(theta))
             #Br2 = np.multiply(data_step[:, 5], np.cos(theta)) + np.multiply(data_step[:, 6], np.sin(theta))
             #Bt2 = -np.multiply(data_step[:, 5], np.sin(theta)) + np.multiply(data_step[:, 6], np.cos(theta))
+            max_theta = np.max(theta)
+            min_theta = np.min(theta)
+
 
             data_step_polar = np.stack( (rho, theta, Br1, Bt1), axis=-1 )
+            data_step_polar = data_step_polar[data_step_polar[:, 1].argsort()]
 
-            data_step_polar = data_step_polar[ data_step_polar[:,1].argsort() ]
+            cs_r = CubicSpline(data_step_polar[:,1], data_step_polar[:,2])
+            cs_t = CubicSpline(data_step_polar[:,1], data_step_polar[:, 3])
 
-            cs_r = CubicSpline(data_step_polar[:,1], data_step_polar[:,2], extrapolate='periodic')
-            cs_t = CubicSpline(data_step_polar[:,1], data_step_polar[:, 3], extrapolate='periodic')
-
+            theta_fine = np.linspace(min_theta, max_theta, num=int(720/self.fractions))
 
             Br_list.append( cs_r(theta_fine) )
             Bt_list.append( cs_t(theta_fine) )
@@ -584,7 +623,7 @@ class ElmerSolver:
         Br = np.array( Br_list )
         Bt = np.array( Bt_list )
 
-        Tq = (self.stack_length * (self.r_middle_ag**2) / MU0 ) * np.trapz( Br * Bt, axis=1, dx=theta_fine[1] )
+        Tq = (self.stack_length * (self.r_middle_ag**2) / MU0 ) * self.fractions * np.trapz( Br * Bt, axis=1, dx=(theta_fine[1]-theta_fine[0]) )
 
         res.cogging_torque_mst_x = x_axis
         res.cogging_torque_mst_y = Tq

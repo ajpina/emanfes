@@ -20,5 +20,7 @@
 from .geometry_gmsh import GeometryGmsh
 
 from .gmsh_outer_stator import GmshOuterStator
+from .gmsh_inner_stator import GmshInnerStator
 from .gmsh_spm_inner_rotor import GmshSPMInnerRotor
+from .gmsh_spm_outer_rotor import GmshSPMOuterRotor
 from .gmsh_ipm_inner_rotor import GmshIPMInnerRotor

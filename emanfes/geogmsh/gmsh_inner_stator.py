@@ -38,15 +38,15 @@ import gmsh
 from emanfes.misc.constants import *
 
 
-class GmshOuterStator:
+class GmshInnerStator:
 
     def __init__(self, simulation, rotating_machine):
         self.Sir = rotating_machine.stator.inner_radius
         self.Sor = rotating_machine.stator.outer_radius
         if rotating_machine.get_machine_type() == "SPM":
-            self.Ror = rotating_machine.rotor.outer_radius + rotating_machine.rotor.magnets[0].length
+            self.Rir = rotating_machine.rotor.inner_radius - rotating_machine.rotor.magnets[0].length
         else:
-            self.Ror = rotating_machine.rotor.outer_radius
+            self.Rir = rotating_machine.rotor.inner_radius
         self.Ns = rotating_machine.stator.slots_number
         self.conn_matrix = rotating_machine.stator.winding.conn_matrix
         self.LayersType = rotating_machine.stator.winding.conductors.get_type()
@@ -82,9 +82,9 @@ class GmshOuterStator:
         if self.toothtip_mesh_size == 0:
             self.toothtip_mesh_size = self.slot_opening_mesh_size
 
-        airgap_lenght = (self.Sir - self.Ror)
-        airgap_radius_1 = self.Ror + (2.0/3.0) * airgap_lenght
-        airgap_radius_2 = self.Ror + (1.0/3.0) * airgap_lenght
+        airgap_lenght = (self.Rir - self.Sor)
+        airgap_radius_1 = self.Sor + (1.0/3.0) * airgap_lenght
+        airgap_radius_2 = self.Sor + (2.0/3.0) * airgap_lenght
         self.stator_airgap_points, self.stator_airgap_lines = rotating_machine.stator.get_stator_airgap_geometry( airgap_radius_1 )
         self.stator_airgap_mesh_size = self._get_mesh_size(self.stator_airgap_points, div=40.0)
         if self.stator_airgap_mesh_size == 0:

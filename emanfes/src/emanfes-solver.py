@@ -57,7 +57,7 @@ def main(argv=None):
         argv = sys.argv
     try:
         try:
-            opts, args = getopt.getopt(argv[1:], "hd:m:a:l:o:ps:e:", ["help","dir","machine","analysis","log","ouput","plot","save","execute"])
+            opts, args = getopt.getopt(argv[1:], "hd:m:a:l:o:ps:e:", ["help","dir","machine","analysis","log","output","plot","save","execute"])
         except getopt.GetoptError as msg:
              raise Usage(msg)
         loglevel = LOG_ALL
@@ -161,8 +161,8 @@ def main(argv=None):
 
             plt.figure(2)
             plt.plot(res.cogging_torque_mst_x, res.cogging_torque_mst_y, '-o', label='MST')
-            plt.plot(res.cogging_torque_x, res.cogging_torque_y, '-o', label='AKKIO')
-            #plt.plot(res.cogging_torque_2_x, res.cogging_torque_2_y, label='AG')
+            plt.plot(res.cogging_torque_x, res.cogging_torque_y, '-o', label='ELMER')
+            plt.plot(res.cogging_torque_2_x, res.cogging_torque_2_y, label='AKKIO')
             plt.legend()
             plt.show()
     else:

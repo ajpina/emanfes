@@ -44,9 +44,12 @@ class GmshIPMInnerRotor:
         self.Sir = rotating_machine.stator.inner_radius
         self.Rir = rotating_machine.rotor.inner_radius
         self.Ror = rotating_machine.rotor.outer_radius
+        self.rotor_type = rotating_machine.rotor.get_type()
+
         self.Ns = rotating_machine.stator.slots_number
         self.pp = rotating_machine.rotor.pp
         self.magnet_type = rotating_machine.rotor.magnets[0].get_type()
+
         self.magnets_per_pole = rotating_machine.rotor.magnets[0].magnets_per_pole
         self.nCopies = int( 2 * self.pp / GCD(self.Ns, 2 * self.pp) )
 
@@ -176,14 +179,14 @@ class GmshIPMInnerRotor:
         surf_and_holes.insert(0, line_loop)
         surface = []
         surface.append(np.array([[2, model.geo.addPlaneSurface(surf_and_holes)]], dtype=np.int32))
-        print(surface)
         return surface
 
 
     def _get_surface_mirror(self, surface, model):
         surface_mirror = []
         surface_mirror.append(model.geo.copy(surface))
-        model.geo.symmetry(surface_mirror, 0, 1, 0, 0)
+        model.geo.symmetrize(surface_mirror, 0, 1, 0, 0)
+        #model.geo.rotate(surface_mirror, 0, 0, 0, 0, 0, 1, PI/6)
         return surface_mirror
 
 
@@ -231,12 +234,15 @@ class GmshIPMInnerRotor:
         initial_lines = [np.array([[1, l]]) for l in lines]
         lines_mirror = []
         lines_mirror.append( model.geo.copy(initial_lines))
-        model.geo.symmetry( lines_mirror, 0, 1, 0, 0)
+        model.geo.symmetrize( lines_mirror, 1, 0, 0, 0)
         for i in range(1, amount):
             initial_lines.append(model.geo.copy(initial_lines[-1]))
             model.geo.rotate( initial_lines[-1], 0, 0, 0, 0, 0, 1, pitch)
             lines_mirror.append( model.geo.copy( lines_mirror[-1] ))
             model.geo.rotate(lines_mirror[-1], 0, 0, 0, 0, 0, 1, pitch)
+
+        for i in lines_mirror:
+            model.geo.rotate(i, 0, 0, 0, 0, 0, 1, PI)
 
         group = [line[0][1] for line in initial_lines ]
         group.extend( [line[0][1] for line in lines_mirror] )
@@ -280,8 +286,12 @@ class GmshIPMInnerRotor:
                                                 0, 0, 0, model, self.pocket_mesh_size[i]))
             holes.append([pocket_surface[i]])
 
-        rotor_core_surface = self._get_surface_with_holes(self.rotor_core_points, self.rotor_core_lines,
-                                               0, 0, 0, holes, model, self.rotor_core_mesh_size)
+        if self.rotor_type == "SPOKE0":
+            rotor_core_surface = self._get_surface_with_holes(self.rotor_core_points, self.rotor_core_lines,
+                                                              0, 0, 0, [], model, self.rotor_core_mesh_size)
+        else:
+            rotor_core_surface = self._get_surface_with_holes(self.rotor_core_points, self.rotor_core_lines,
+                                                                0, 0, 0, holes, model, self.rotor_core_mesh_size)
 
         rotor_airgap_surface = self._get_surface(self.rotor_airgap_points, self.rotor_airgap_lines,
                                               0, 0, 0, model, self.rotor_airgap_mesh_size)
@@ -298,15 +308,15 @@ class GmshIPMInnerRotor:
         pole_pitch = PI / self.pp
 
         self._get_master_slave_boundary(self.rotor_master_boundary, GCD(self.Ns, 2 * self.pp), [101,102], ["ROTOR_MASTER_BOUNDARY","ROTOR_SLAVE_BOUNDARY"], model)
+        print(self.rotor_sliding_boundary)
         self._get_boundary(self.rotor_sliding_boundary, self.nCopies, pole_pitch, 103, "ROTOR_SLIDING_BOUNDARY", model)
 
         # # Delete duplicated instances before building surfaces
         gmsh.option.setNumber("Geometry.AutoCoherence", 1)
-        #
+
 
         self._copy_and_rotate_surfaces(shaft_surface, shaft_surface_mirror, self.nCopies, pole_pitch,
                                         104, "SHAFTS", model)
-
         self._copy_and_rotate_surfaces(rotor_core_surface, rotor_core_surface_mirror, self.nCopies, pole_pitch,
                                         105, "ROTORCORES", model)
         self._copy_and_rotate_surfaces(pocket_surface, pocket_surface_mirror, self.nCopies, pole_pitch,
@@ -343,7 +353,7 @@ class GmshIPMInnerRotor:
         #gmsh.fltk.run()
         model.mesh.generate(2)
         #gmsh.fltk.run()
-        gmsh.write("rotor.msh")
+        gmsh.write("rotor.msh2")
         gmsh.finalize()
 
         return True

@@ -18,7 +18,7 @@
 # ==========================================================================
 
 """
-    Creates Gmsh Inner Rotor.
+    Creates Gmsh Outer Rotor.
 """
 
 # ==========================================================================
@@ -38,39 +38,38 @@ import gmsh
 from emanfes.misc.constants import *
 
 
-class GmshSPMInnerRotor:
+class GmshSPMOuterRotor:
 
     def __init__(self, simulation, rotating_machine):
-        self.Sir = rotating_machine.stator.inner_radius
-        self.Rir = rotating_machine.rotor.inner_radius
-        self.Ror = rotating_machine.rotor.outer_radius + rotating_machine.rotor.magnets[0].length
+        self.Sor = rotating_machine.stator.outer_radius
+        self.Rir = rotating_machine.rotor.inner_radius - rotating_machine.rotor.magnets[0].length
+        self.Ror = rotating_machine.rotor.outer_radius
         self.Ns = rotating_machine.stator.slots_number
         self.pp = rotating_machine.rotor.pp
         self.nCopies = int( 2 * self.pp / GCD(self.Ns, 2 * self.pp) )
 
-        self.shaft_points, self.shaft_lines = rotating_machine.rotor.get_shaft_geometry()
-        self.shaft_mesh_size = self._get_mesh_size(self.shaft_points, div=2.0)
+        #self.shaft_points, self.shaft_lines = rotating_machine.rotor.get_shaft_geometry()
+        #self.shaft_mesh_size = self._get_mesh_size(self.shaft_points, div=2.0)
 
         self.magnet_points, self.magnet_lines = rotating_machine.rotor.get_magnet_geometry()
-        self.magnet_mesh_size = self._get_mesh_size(self.magnet_points, div=10.0)
-        if self.magnet_mesh_size == 0:
-            self.magnet_mesh_size = self.shaft_mesh_size / 2.0
+        self.magnet_mesh_size = self._get_mesh_size(self.magnet_points, div=20.0)
+        #if self.magnet_mesh_size == 0:
+        #    self.magnet_mesh_size = self.shaft_mesh_size / 2.0
 
         self.rotor_core_points, self.rotor_core_lines = rotating_machine.rotor.get_core_geometry()
         self.rotor_core_mesh_size = self._get_mesh_size(self.rotor_core_points, div=5.0)
-        if self.rotor_core_mesh_size == 0:
-            self.rotor_core_mesh_size = self.shaft_mesh_size / 2.0
+        #if self.rotor_core_mesh_size == 0:
+        #    self.rotor_core_mesh_size = self.shaft_mesh_size / 2.0
 
-        airgap_lenght = (self.Sir - self.Ror)
-        airgap_radius_1 = self.Ror + (2.0 / 3.0) * airgap_lenght
-        airgap_radius_2 = self.Ror + (1.0 / 3.0) * airgap_lenght
+        airgap_lenght = (self.Rir - self.Sor)
+        airgap_radius_1 = self.Rir - (2.0 / 3.0) * airgap_lenght
+        airgap_radius_2 = self.Rir - (1.0 / 3.0) * airgap_lenght
         self.rotor_airgap_points, self.rotor_airgap_lines = rotating_machine.rotor.get_rotor_airgap_geometry( airgap_radius_2)
         self.rotor_airgap_mesh_size = self._get_mesh_size(self.rotor_airgap_points, div=40.0)
         if self.rotor_airgap_mesh_size == 0:
             self.rotor_airgap_mesh_size = self.magnet_mesh_size / 20.0
 
-
-
+        self.outer_rotor_boundary = rotating_machine.rotor.get_outer_rotor_boundary()
         self.rotor_master_boundary = rotating_machine.rotor.get_master_boundary()
         self.rotor_sliding_boundary = rotating_machine.rotor.get_sliding_boundary()
 
@@ -211,8 +210,8 @@ class GmshSPMInnerRotor:
 
 
 
-        shaft_surface = self._get_surface( self.shaft_points, self.shaft_lines,
-                                                  0, 0, 0, model, self.shaft_mesh_size)
+        #shaft_surface = self._get_surface( self.shaft_points, self.shaft_lines,
+        #                                          0, 0, 0, model, self.shaft_mesh_size)
         magnet_surface = self._get_surface( self.magnet_points, self.magnet_lines,
                                                 0, 0, 0, model, self.magnet_mesh_size)
         rotor_core_surface = self._get_surface(self.rotor_core_points, self.rotor_core_lines,
@@ -220,21 +219,22 @@ class GmshSPMInnerRotor:
         rotor_airgap_surface = self._get_surface(self.rotor_airgap_points, self.rotor_airgap_lines,
                                               0, 0, 0, model, self.rotor_airgap_mesh_size)
 
-        shaft_surface_mirror = self._get_surface_mirror(shaft_surface[-1], model)
+        #shaft_surface_mirror = self._get_surface_mirror(shaft_surface[-1], model)
         magnet_surface_mirror = self._get_surface_mirror( magnet_surface[-1], model )
         rotor_core_surface_mirror = self._get_surface_mirror( rotor_core_surface[-1], model )
         rotor_airgap_surface_mirror = self._get_surface_mirror(rotor_airgap_surface[-1], model)
 
         pole_pitch = PI / self.pp
 
+        self._get_boundary(self.outer_rotor_boundary, self.nCopies, pole_pitch, 100, "OUTER_ROTOR_BOUNDARY", model)
         self._get_master_slave_boundary(self.rotor_master_boundary, GCD(self.Ns, 2 * self.pp), [101,102], ["ROTOR_MASTER_BOUNDARY","ROTOR_SLAVE_BOUNDARY"], model)
         self._get_boundary(self.rotor_sliding_boundary, self.nCopies, pole_pitch, 103, "ROTOR_SLIDING_BOUNDARY", model)
 
         # # Delete duplicated instances before building surfaces
         gmsh.option.setNumber("Geometry.AutoCoherence", 1)
         #
-        self._copy_and_rotate_surfaces(shaft_surface, shaft_surface_mirror, self.nCopies, pole_pitch,
-                                        104, "SHAFTS", model)
+        #self._copy_and_rotate_surfaces(shaft_surface, shaft_surface_mirror, self.nCopies, pole_pitch,
+        #                                104, "SHAFTS", model)
 
         self._copy_and_rotate_surfaces(rotor_core_surface, rotor_core_surface_mirror, self.nCopies, pole_pitch,
                                         105, "ROTORCORES", model)
